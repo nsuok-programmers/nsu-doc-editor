@@ -42,6 +42,42 @@ export function init() {
   bindGitHubPanel();
   window.addEventListener('resize', autoResizeAll);
 
+  // Paste Info modal logic
+  const pasteBtn = document.getElementById('paste-info-btn');
+  const modal    = document.getElementById('paste-info-modal');
+  const ta       = document.getElementById('paste-info-textarea');
+  const cancel   = document.getElementById('paste-info-cancel');
+  const submit   = document.getElementById('paste-info-submit');
+  if (pasteBtn && modal && ta && cancel && submit) {
+    pasteBtn.addEventListener('click', () => {
+      ta.value = '';
+      modal.style.display = 'flex';
+      ta.focus();
+    });
+    cancel.addEventListener('click', () => {
+      modal.style.display = 'none';
+    });
+    submit.addEventListener('click', () => {
+      const text = ta.value.trim();
+      if (!text) { showToast('Paste .info file content first', 'error'); return; }
+      const parsed = parseInfo(text);
+      if (!parsed.name) {
+        showToast('Could not parse pasted info', 'error');
+        return;
+      }
+      tables[parsed.name] = parsed;
+      refreshSidebar();
+      if (!activeKey) selectTable(parsed.name);
+      updateToolbarState();
+      showToast(`Loaded ${parsed.name} (${parsed.columns.length} cols)`, 'success');
+      modal.style.display = 'none';
+    });
+    // Hide modal on Escape
+    modal.addEventListener('keydown', e => {
+      if (e.key === 'Escape') modal.style.display = 'none';
+    });
+  }
+
   // Restore tables from localStorage if autosave is enabled
   const autosaveCheckbox = document.getElementById('autosave-checkbox');
   if (autosaveCheckbox) {

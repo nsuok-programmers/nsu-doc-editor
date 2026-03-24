@@ -9,7 +9,7 @@
 <body>
 
 <header>
-  <div class="logo">DB<span class="sep">|</span>Docs Editor</div>
+  <div class="logo">NSU PROD<span class="sep">|</span>Docs Editor</div>
   <nav>
     <span id="autosave-toggle">
       <label id="autosave-label" for="autosave-checkbox">Autosave</label>
@@ -36,6 +36,19 @@
       <div class="drop-icon">⬆</div>
       <div class="drop-label">Drop <strong>.info files</strong><br>or click to browse</div>
       <div class="drop-ext">.info</div>
+      <button id="paste-info-btn" type="button">Paste Info</button>
+
+      <!-- Paste Info Modal -->
+      <div id="paste-info-modal">
+        <div>
+          <h3>Paste .info File Content</h3>
+          <textarea id="paste-info-textarea" rows="12"></textarea>
+          <div class="modal-actions">
+            <button id="paste-info-cancel" type="button">Cancel</button>
+            <button id="paste-info-submit" type="button">Import</button>
+          </div>
+        </div>
+      </div>
     </label>
   </aside>
 

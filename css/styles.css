@@ -395,6 +395,115 @@ select.field-input {
   padding-right: 2rem;
 }
 
+
+/* ── Paste Info Modal & Button ─────────────────────────────── */
+#paste-info-btn {
+  background: var(--surface2);
+  color: var(--accent);
+  border: 1.5px solid var(--accent2);
+  border-radius: 7px;
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 500;
+  padding: 0.7em 0;
+  margin-top: 0.7em;
+  transition: background 0.15s, color 0.15s, border 0.15s;
+  cursor: pointer;
+  box-shadow: 0 1px 4px #0001;
+}
+#paste-info-btn:hover {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent2);
+}
+
+#paste-info-modal {
+  display: none;
+  position: fixed;
+  top: 0; left: 0; width: 100vw; height: 100vh;
+  background: rgba(15,17,23,0.65);
+  z-index: 1000;
+  align-items: center;
+  justify-content: center;
+  animation: fadeInBg 0.2s;
+}
+@keyframes fadeInBg {
+  from { background: rgba(15,17,23,0.0); }
+  to   { background: rgba(15,17,23,0.65); }
+}
+#paste-info-modal > div {
+  background: var(--surface);
+  border-radius: 10px;
+  box-shadow: 0 4px 32px #0003, 0 1.5px 8px #0002;
+  padding: 2.2em 1.5em 1.2em 1.5em;
+  max-width: 480px;
+  width: 92vw;
+  display: flex;
+  flex-direction: column;
+  gap: 1.1em;
+  border: 1.5px solid var(--border2);
+  animation: popInModal 0.18s cubic-bezier(.4,1.6,.6,1) both;
+}
+@keyframes popInModal {
+  from { transform: scale(0.97) translateY(30px); opacity: 0; }
+  to   { transform: scale(1) translateY(0); opacity: 1; }
+}
+#paste-info-modal h3 {
+  margin: 0 0 0.2em 0;
+  font-size: 1.13em;
+  font-family: var(--mono);
+  color: var(--accent);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+#paste-info-textarea {
+  width: 100%;
+  min-height: 8em;
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--text);
+  background: var(--surface2);
+  border: 1.5px solid var(--border2);
+  border-radius: 6px;
+  padding: 0.7em 0.9em;
+  resize: vertical;
+  transition: border 0.15s, background 0.15s;
+}
+#paste-info-textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  background: rgba(79,142,247,0.04);
+}
+#paste-info-modal .field-row {
+  margin-bottom: 0.7em;
+}
+#paste-info-modal button {
+  font-family: var(--mono);
+  font-size: 12px;
+  border-radius: 5px;
+  border: 1.5px solid var(--border2);
+  padding: 0.45em 1.2em;
+  background: var(--surface2);
+  color: var(--text2);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border 0.15s;
+}
+#paste-info-modal button:hover {
+  background: var(--accent2);
+  color: #fff;
+  border-color: var(--accent);
+}
+#paste-info-submit {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent2);
+}
+#paste-info-submit:hover {
+  background: var(--accent2);
+  color: #fff;
+  border-color: var(--accent);
+}
+
 /* ── Custom select ────────────────────────────────────────────────────── */
 .custom-select {
   position: relative;
