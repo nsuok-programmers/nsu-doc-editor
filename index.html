@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DB Docs Editor</title>
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+<header>
+  <div class="logo">DB<span class="sep">|</span>Docs Editor</div>
+  <nav>
+    <span id="autosave-toggle">
+      <label id="autosave-label" for="autosave-checkbox">Autosave</label>
+      <input type="checkbox" id="autosave-checkbox">
+    </span>
+    <button class="btn btn-ghost"    id="btn-clear"         disabled>Clear All</button>
+    <button class="btn btn-ghost"    id="btn-copy-json"     disabled>Copy JSON</button>
+    <button class="btn btn-success"  id="btn-download-json" disabled>↓ Download Package</button>
+  </nav>
+</header>
+
+<div class="workspace">
+
+  <!-- ── Sidebar ── -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-section-header">📂 Loaded Tables</div>
+
+    <div class="table-list" id="table-list">
+      <!-- Populated by editor.js -->
+    </div>
+
+    <label class="drop-zone" id="drop-zone">
+      <input type="file" id="file-input" accept=".info" multiple>
+      <div class="drop-icon">⬆</div>
+      <div class="drop-label">Drop <strong>.info files</strong><br>or click to browse</div>
+      <div class="drop-ext">.info</div>
+    </label>
+  </aside>
+
+  <!-- ── Editor main ── -->
+  <main class="editor-main">
+
+    <div class="empty-state" id="empty-state">
+      <div class="empty-icon">🗄️</div>
+      <h2>No table loaded</h2>
+      <p>Upload one or more <code style="font-family:var(--mono);color:var(--accent);font-size:12px">.info</code> files to start editing.</p>
+    </div>
+
+    <div class="editor-content" id="editor-content" style="display:none">
+      <!-- Populated per-table by editor.js -->
+    </div>
+
+  </main>
+
+</div>
+
+<!-- Toast notification -->
+<div class="toast" id="toast"></div>
+
+<script type="module">
+  import { init } from './js/editor.js';
+  init();
+</script>
+
+</body>
+</html>
