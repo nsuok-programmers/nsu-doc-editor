@@ -4,8 +4,8 @@
  * Imports parser.js for .info parsing and github.js for submission.
  */
 
-import { parseInfo, toExportJson } from './parser.js';
-import { submitTableDefinition } from './github.js';
+import { parseInfo, toExportJson, parseDat, serializeDat } from './parser.js';
+import { submitTableDefinition, listRepoTables, fetchTableFromRepo } from './github.js';
 import JSZip from 'https://esm.sh/jszip';
 import { minimalSetup } from 'https://esm.sh/codemirror';
 import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter } from 'https://esm.sh/@codemirror/view';
@@ -16,15 +16,15 @@ import { oneDark } from 'https://esm.sh/@codemirror/theme-one-dark';
 
 const cmTheme = EditorView.theme({
   '&': { fontSize: '12px' },
-  '.cm-editor': { background: '#0f1117' },
+  '.cm-editor': { background: '#0c1410' },
   '.cm-scroller': { fontFamily: "'IBM Plex Mono', monospace" },
-  '.cm-content': { padding: '0.3rem 0.5rem', minHeight: '5rem', caretColor: '#4f8ef7' },
+  '.cm-content': { padding: '0.3rem 0.5rem', minHeight: '5rem', caretColor: '#00a882' },
   '.cm-focused': { outline: 'none' },
-  '.cm-gutters': { background: '#181c27', borderRight: '1px solid #2a3045', color: '#555f7a' },
+  '.cm-gutters': { background: '#141d1a', borderRight: '1px solid #243530', color: '#4a6b62' },
   '.cm-lineNumbers .cm-gutterElement': { padding: '0 0.5rem' },
-  '.cm-activeLine': { background: 'rgba(79,142,247,0.05)' },
-  '.cm-activeLineGutter': { background: 'rgba(79,142,247,0.08)', color: '#8b93a8' },
-  '.cm-selectionBackground': { background: 'rgba(79,142,247,0.25) !important' },
+  '.cm-activeLine': { background: 'rgba(0,168,130,0.05)' },
+  '.cm-activeLineGutter': { background: 'rgba(0,168,130,0.08)', color: '#7da898' },
+  '.cm-selectionBackground': { background: 'rgba(0,168,130,0.25) !important' },
 });
 
 const sqlEditors = new Map(); // query index → EditorView
@@ -57,26 +57,40 @@ export function init() {
     cancel.addEventListener('click', () => {
       modal.style.display = 'none';
     });
-    submit.addEventListener('click', () => {
+    submit.addEventListener('click', async () => {
       const text = ta.value.trim();
       if (!text) { showToast('Paste .info file content first', 'error'); return; }
       const parsed = parseInfo(text);
-      if (!parsed.name) {
-        showToast('Could not parse pasted info', 'error');
-        return;
-      }
-      tables[parsed.name] = parsed;
-      refreshSidebar();
-      if (!activeKey) selectTable(parsed.name);
-      updateToolbarState();
-      showToast(`Loaded ${parsed.name} (${parsed.columns.length} cols)`, 'success');
+      if (!parsed.name) { showToast('Could not parse pasted info', 'error'); return; }
       modal.style.display = 'none';
+      await loadInfoTable(parsed);
     });
     // Hide modal on Escape
     modal.addEventListener('keydown', e => {
       if (e.key === 'Escape') modal.style.display = 'none';
     });
   }
+
+  // Paste .dat modal logic
+  const datModal  = document.getElementById('paste-dat-modal');
+  const datTa     = document.getElementById('paste-dat-textarea');
+  const datCancel = document.getElementById('paste-dat-cancel');
+  const datSubmit = document.getElementById('paste-dat-submit');
+  if (datModal && datTa && datCancel && datSubmit) {
+    datCancel.addEventListener('click', () => { datModal.style.display = 'none'; });
+    datSubmit.addEventListener('click', () => {
+      const text = datTa.value.trim();
+      if (!text) { showToast('Paste .dat content first', 'error'); return; }
+      applyDatData(parseDat(text));
+      datModal.style.display = 'none';
+    });
+    datModal.addEventListener('keydown', e => {
+      if (e.key === 'Escape') datModal.style.display = 'none';
+    });
+  }
+
+  initConfirmModal();
+  bindBrowseRepoModal();
 
   // Restore tables from localStorage if autosave is enabled
   const autosaveCheckbox = document.getElementById('autosave-checkbox');
@@ -108,6 +122,205 @@ export function init() {
   }
 }
 
+/* --------------------------- BROWSE REPO MODAL ---------------------------- */
+
+function bindBrowseRepoModal() {
+  const browseBtn   = document.getElementById('browse-repo-btn');
+  const modal       = document.getElementById('browse-repo-modal');
+  const cancelBtn   = document.getElementById('browse-repo-cancel');
+  const importBtn   = document.getElementById('browse-repo-import');
+  const listEl      = document.getElementById('browse-repo-list');
+  if (!browseBtn || !modal) return;
+
+  function closeModal() {
+    modal.style.display = 'none';
+    listEl.innerHTML = '';
+    importBtn.disabled = true;
+    importBtn.textContent = 'Import Selected';
+  }
+
+  browseBtn.addEventListener('click', () => {
+    modal.style.display = 'flex';
+    loadRepoTableList();
+  });
+  cancelBtn.addEventListener('click', closeModal);
+  modal.addEventListener('click', e => { if (e.target === modal) closeModal(); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && modal.style.display === 'flex') closeModal(); });
+
+  // Enable/disable Import button based on checkbox state (event delegation)
+  listEl.addEventListener('change', () => {
+    importBtn.disabled = !listEl.querySelector('.browse-repo-check:checked');
+  });
+
+  importBtn.addEventListener('click', async () => {
+    const checked = [...listEl.querySelectorAll('.browse-repo-check:checked')].map(cb => ({ name: cb.value, type: cb.dataset.tableType }));
+    if (!checked.length) return;
+
+    importBtn.disabled = true;
+    importBtn.textContent = 'Importing…';
+
+    const results = await Promise.allSettled(checked.map(({ name, type }) => fetchTableFromRepo(name, type)));
+
+    let successes = 0;
+    let failures  = 0;
+    let firstSuccessName = null;
+    results.forEach((r, i) => {
+      if (r.status === 'fulfilled') {
+        tables[r.value.name] = r.value;
+        if (!firstSuccessName) firstSuccessName = r.value.name;
+        successes++;
+      } else {
+        failures++;
+        console.error(`Failed to import ${checked[i]}:`, r.reason);
+      }
+    });
+
+    refreshSidebar();
+    updateToolbarState();
+    if (!activeKey && firstSuccessName) {
+      selectTable(firstSuccessName);
+    } else if (activeKey && tables[activeKey]) {
+      renderEditor(tables[activeKey]);
+    }
+    closeModal();
+
+    if (failures === 0) {
+      showToast(`Imported ${successes} table${successes !== 1 ? 's' : ''}`, 'success');
+    } else if (successes > 0) {
+      showToast(`Imported ${successes}, failed ${failures} — see console`, 'error');
+    } else {
+      showToast('Import failed — see console', 'error');
+    }
+  });
+}
+
+async function loadRepoTableList() {
+  const listEl   = document.getElementById('browse-repo-list');
+  const importBtn = document.getElementById('browse-repo-import');
+  importBtn.disabled = true;
+
+  listEl.innerHTML = '<div class="browse-repo-loading"><span class="browse-repo-spinner"></span>Fetching table list…</div>';
+
+  try {
+    const names = await listRepoTables();
+    renderRepoTableList(names);
+  } catch (err) {
+    listEl.innerHTML = `<p style="padding:1.25rem;font-family:var(--mono);font-size:12px;color:var(--danger)">${err.message}</p>`;
+  }
+}
+
+function renderRepoTableList(items) {
+  const listEl = document.getElementById('browse-repo-list');
+
+  if (!items.length) {
+    listEl.innerHTML = '<p style="padding:1.25rem;font-family:var(--mono);font-size:12px;color:var(--text3)">No tables found in table-definitions/</p>';
+    return;
+  }
+
+  const byType = { data: [], definition: [] };
+  items.forEach(item => { (byType[item.type] ??= []).push(item); });
+
+  // Search bar
+  const searchWrap  = document.createElement('div');
+  searchWrap.className = 'browse-repo-search';
+  const searchInput = document.createElement('input');
+  searchInput.type        = 'text';
+  searchInput.className   = 'field-input';
+  searchInput.placeholder = 'Search tables…';
+  searchWrap.appendChild(searchInput);
+
+  const tabBar  = document.createElement('div');
+  tabBar.className = 'browse-repo-tabs';
+
+  const panels = document.createElement('div');
+
+  ['data', 'definition'].forEach((type, i) => {
+    const typeItems = byType[type] || [];
+
+    const tab = document.createElement('button');
+    tab.type          = 'button';
+    tab.className     = 'browse-tab' + (i === 0 ? ' active' : '');
+    tab.dataset.tab   = type;
+    tab.textContent   = `${type.charAt(0).toUpperCase() + type.slice(1)} (${typeItems.length})`;
+    tabBar.appendChild(tab);
+
+    const panel = document.createElement('div');
+    panel.className      = 'browse-repo-panel' + (i === 0 ? ' active' : '');
+    panel.dataset.panel  = type;
+
+    if (!typeItems.length) {
+      const empty = document.createElement('p');
+      empty.style.cssText = 'padding:1.25rem;font-family:var(--mono);font-size:12px;color:var(--text3)';
+      empty.textContent   = `No ${type} tables found.`;
+      panel.appendChild(empty);
+    } else {
+      const grid = document.createElement('div');
+      grid.className = 'browse-repo-grid';
+
+      typeItems.forEach(({ name, type: t }) => {
+        const card = document.createElement('label');
+        card.className = 'browse-repo-card';
+
+        const cb = document.createElement('input');
+        cb.type              = 'checkbox';
+        cb.value             = name;
+        cb.className         = 'browse-repo-check';
+        cb.dataset.tableType = t;
+
+        const nameSpan = document.createElement('span');
+        nameSpan.className   = 'browse-card-name';
+        nameSpan.textContent = name;
+
+        card.appendChild(cb);
+        card.appendChild(nameSpan);
+
+        if (tables[name]) {
+          const badge = document.createElement('span');
+          badge.className   = 'browse-repo-loaded-badge';
+          badge.textContent = 'loaded';
+          card.appendChild(badge);
+        }
+
+        grid.appendChild(card);
+      });
+
+      panel.appendChild(grid);
+    }
+
+    panels.appendChild(panel);
+  });
+
+  tabBar.addEventListener('click', e => {
+    const btn = e.target.closest('.browse-tab');
+    if (!btn) return;
+    tabBar.querySelectorAll('.browse-tab').forEach(t => t.classList.remove('active'));
+    panels.querySelectorAll('.browse-repo-panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    panels.querySelector(`.browse-repo-panel[data-panel="${btn.dataset.tab}"]`).classList.add('active');
+  });
+
+  searchInput.addEventListener('input', () => {
+    const q = searchInput.value.trim().toLowerCase();
+    panels.querySelectorAll('.browse-repo-card').forEach(card => {
+      const name = card.querySelector('.browse-card-name').textContent.toLowerCase();
+      card.style.display = (!q || name.includes(q)) ? '' : 'none';
+    });
+    tabBar.querySelectorAll('.browse-tab').forEach(tab => {
+      const type  = tab.dataset.tab;
+      const panel = panels.querySelector(`.browse-repo-panel[data-panel="${type}"]`);
+      const total   = (byType[type] || []).length;
+      const visible = panel ? [...panel.querySelectorAll('.browse-repo-card')].filter(c => c.style.display !== 'none').length : 0;
+      const label = type.charAt(0).toUpperCase() + type.slice(1);
+      tab.textContent = q ? `${label} (${visible}/${total})` : `${label} (${total})`;
+    });
+  });
+
+  listEl.innerHTML = '';
+  listEl.appendChild(searchWrap);
+  listEl.appendChild(tabBar);
+  listEl.appendChild(panels);
+}
+
 /* ------------------------------ FILE HANDLING ----------------------------- */
 
 function bindDropZone() {
@@ -130,17 +343,48 @@ function handleFiles(files) {
 
   infoFiles.forEach(file => {
     const reader = new FileReader();
-    reader.onload = e => {
+    reader.onload = async e => {
       const parsed = parseInfo(e.target.result);
       if (!parsed.name) { showToast(`Could not parse: ${file.name}`, 'error'); return; }
-      tables[parsed.name] = parsed;
-      refreshSidebar();
-      if (!activeKey) selectTable(parsed.name);
-      updateToolbarState();
-      showToast(`Loaded ${parsed.name} (${parsed.columns.length} cols)`, 'success');
+      await loadInfoTable(parsed);
     };
     reader.readAsText(file);
   });
+}
+
+async function loadInfoTable(parsed) {
+  // Check if the table already exists in the repo
+  let repoMatch = null;
+  try {
+    const repoTables = await listRepoTables();
+    repoMatch = repoTables.find(t => t.name === parsed.name) || null;
+  } catch { /* repo unavailable — proceed with local */ }
+
+  if (repoMatch) {
+    const useRepo = await showConfirm(
+      `"${parsed.name}" already exists in the repo.\n\nImport from repo to get existing queries, definition data, and other metadata — or continue with the local .info file.`,
+      { title: 'Table Exists in Repo', okLabel: 'Import from Repo', cancelLabel: 'Use Local File' }
+    );
+    if (useRepo) {
+      try {
+        const table = await fetchTableFromRepo(repoMatch.name, repoMatch.type);
+        tables[table.name] = table;
+        refreshSidebar();
+        if (!activeKey) selectTable(table.name);
+        updateToolbarState();
+        showToast(`Imported ${table.name} from repo`, 'success');
+        return;
+      } catch (err) {
+        showToast(`Repo import failed: ${err.message} — loading local .info`, 'error');
+      }
+    }
+  }
+
+  tables[parsed.name] = parsed;
+  refreshSidebar();
+  if (!activeKey) selectTable(parsed.name);
+  updateToolbarState();
+  showToast(`Loaded ${parsed.name} (${parsed.columns.length} cols)`, 'success');
 }
 
 /* --------------------------------- SIDEBAR -------------------------------- */
@@ -238,7 +482,6 @@ function renderEditor(table) {
             <tr>
               <th class="col-w-name">Column Name</th>
               <th class="col-w-type">Data Type</th>
-              <th class="col-w-null">Nullable</th>
               <th class="col-w-def">Definition Table</th>
               <th class="col-w-desc">Description</th>
               <th class="col-w-del"></th>
@@ -251,6 +494,8 @@ function renderEditor(table) {
         <button class="add-row-btn" id="btn-add-row">+ Add column</button>
       </div>
     </div>
+
+    ${ table.type === 'definition' ? definitionSectionHtml(table) : '' }
 
     <div class="field-group" id="fg-queries">
       <div class="field-group-header">
@@ -293,6 +538,7 @@ function renderEditor(table) {
   document.getElementById('tag-input').addEventListener('keydown', handleTagInput);
   document.getElementById('btn-add-query').addEventListener('click', addQuery);
   bindCustomSelect();
+  bindDefinitionSection();
 
   autoResizeAll();
   renderGitHubForm();
@@ -312,12 +558,6 @@ function columnRowHtml(col, i) {
         <input class="cell-input mono" data-col="${i}" data-field="type"
           value="${esc(col.type)}" placeholder="VARCHAR2(...)">
       </td>
-      <td class="col-w-null td-center">
-        <button class="null-toggle ${col.nullable === 'Yes' ? 'null-yes' : 'null-no'}"
-                data-col="${i}" data-field="nullable" data-value="${col.nullable}">
-          ${col.nullable}
-        </button>
-      </td>
       <td class="col-w-def">
         <input class="cell-input mono" data-col="${i}" data-field="definition_table"
           value="${esc(col.definition_table || '')}" placeholder="TABLE_NAME">
@@ -331,6 +571,139 @@ function columnRowHtml(col, i) {
         <button class="row-del-btn" data-del-row="${i}" title="Delete column">✕</button>
       </td>
     </tr>`;
+}
+
+/* ----------------------- DEFINITION DATA RENDERING ----------------------- */
+
+function definitionSectionHtml(table) {
+  const headers  = table['definition_headers'] || [];
+  const data     = table['definition_data']    || [];
+  const colCount = data.length > 0
+    ? Math.max(headers.length, ...data.map(r => r.length))
+    : headers.length;
+
+  const theadCells = Array.from({ length: colCount }, (_, i) => {
+    const h = headers[i];
+    return (h && h.trim())
+      ? `<th>${esc(h)}</th>`
+      : `<th class="def-header-unnamed">header_not_named</th>`;
+  }).join('');
+
+  return /*html*/`
+    <div class="field-group" id="def-data-panel">
+      <div class="field-group-header">
+        📖 Definition Data
+        <span class="header-meta">${data.length} rows</span>
+        <span style="flex:1"></span>
+        <button class="btn btn-ghost btn-sm" id="btn-paste-dat">Paste .dat</button>
+        <label class="btn btn-ghost btn-sm" style="margin:0">
+          Import .dat
+          <input type="file" id="dat-file-input" accept=".dat,.txt,.tsv" style="display:none">
+        </label>
+      </div>
+      <div class="field-group-body">
+        <div class="def-headers-section">
+          <div class="def-headers-top">
+            <span class="field-label">Headers</span>
+            <button class="btn btn-ghost btn-sm" id="btn-add-def-header">+ Header</button>
+          </div>
+          <div class="def-headers-list" id="def-headers-list">
+            ${headers.map((h, i) => defHeaderInputHtml(h, i)).join('')}
+            ${headers.length === 0 ? '<span class="def-no-headers">No headers defined</span>' : ''}
+          </div>
+        </div>
+      </div>
+      <div class="schema-table-wrap def-data-outer">
+        <table class="schema" id="def-data-table">
+          <thead>
+            <tr>${theadCells}<th class="col-w-del"></th></tr>
+          </thead>
+          <tbody id="def-data-tbody" class="def-data-scroll">
+            ${data.map((row, i) => defDataRowHtml(row, i, colCount)).join('')}
+          </tbody>
+        </table>
+        <button class="add-row-btn" id="btn-add-def-row">+ Add row</button>
+      </div>
+    </div>`;
+}
+
+function defHeaderInputHtml(header, i) {
+  return `<span class="def-header-chip">
+    <input class="cell-input def-header-input" data-def-header="${i}"
+      value="${esc(header)}" placeholder="Header name">
+    <button class="tag-remove" data-del-def-header="${i}">×</button>
+  </span>`;
+}
+
+function defDataRowHtml(row, rowIdx, colCount) {
+  let cells = '';
+  for (let c = 0; c < colCount; c++) {
+    cells += `<td><input class="cell-input mono" data-def-row="${rowIdx}" data-def-col="${c}" value="${esc(row[c] || '')}"></td>`;
+  }
+  return `<tr>${cells}<td class="col-w-del"><button class="row-del-btn" data-del-def-row="${rowIdx}" title="Delete row">✕</button></td></tr>`;
+}
+
+function bindDefinitionSection() {
+  document.getElementById('btn-paste-dat')?.addEventListener('click', () => {
+    document.getElementById('paste-dat-textarea').value = '';
+    document.getElementById('paste-dat-modal').style.display = 'flex';
+    document.getElementById('paste-dat-textarea').focus();
+  });
+  document.getElementById('dat-file-input')?.addEventListener('change', e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => applyDatData(parseDat(ev.target.result));
+    reader.readAsText(file);
+  });
+  document.getElementById('btn-add-def-header')?.addEventListener('click', () => {
+    syncEditorToState();
+    const idx = tables[activeKey]['definition_headers'].length;
+    tables[activeKey]['definition_headers'].push('');
+    const list = document.getElementById('def-headers-list');
+    if (list) {
+      list.querySelector('.def-no-headers')?.remove();
+      list.insertAdjacentHTML('beforeend', defHeaderInputHtml('', idx));
+      list.querySelectorAll('.def-header-input').item(idx)?.focus({ preventScroll: true });
+    }
+  });
+  document.getElementById('btn-add-def-row')?.addEventListener('click', () => {
+    syncEditorToState();
+    const colCount = (tables[activeKey]['definition_headers'] || []).length;
+    if (!colCount) { showToast('No headers defined', 'error'); return; }
+    tables[activeKey]['definition_data'].push(Array(colCount).fill(''));
+    renderEditor(tables[activeKey]);
+  });
+
+  // Update table header cells on blur without full re-render
+  document.getElementById('def-headers-list')?.addEventListener('focusout', e => {
+    if (!e.target.matches('.def-header-input') || !activeKey) return;
+    syncEditorToState();
+    const headers = tables[activeKey]['definition_headers'] || [];
+    const data    = tables[activeKey]['definition_data']    || [];
+    const colCount = data.length > 0
+      ? Math.max(headers.length, ...data.map(r => r.length))
+      : headers.length;
+    const headerRow = document.querySelector('#def-data-table thead tr');
+    if (headerRow) {
+      const cells = Array.from({ length: colCount }, (_, i) => {
+        const h = headers[i];
+        return (h && h.trim())
+          ? `<th>${esc(h)}</th>`
+          : `<th class="def-header-unnamed">header_not_named</th>`;
+      });
+      cells.push(`<th class="col-w-del"></th>`);
+      headerRow.innerHTML = cells.join('');
+    }
+  });
+}
+
+function applyDatData(rows) {
+  if (!activeKey) return;
+  syncEditorToState();
+  tables[activeKey]['definition_data'] = rows;
+  renderEditor(tables[activeKey]);
+  showToast(`Loaded ${rows.length} rows`, 'success');
 }
 
 // Use event delegation on tbody for PK toggle and row delete
@@ -350,6 +723,25 @@ document.addEventListener('click', e => {
     const i = parseInt(delQuery.dataset.delQuery);
     syncEditorToState();
     tables[activeKey].queries.splice(i, 1);
+    renderEditor(tables[activeKey]);
+  }
+
+  // Delete definition header
+  const delDefHeader = e.target.closest('[data-del-def-header]');
+  if (delDefHeader && activeKey) {
+    const i = parseInt(delDefHeader.dataset.delDefHeader);
+    syncEditorToState();
+    tables[activeKey]['definition_headers'].splice(i, 1);
+    tables[activeKey]['definition_data'].forEach(row => row.splice(i, 1));
+    renderEditor(tables[activeKey]);
+  }
+
+  // Delete definition data row
+  const delDefRow = e.target.closest('[data-del-def-row]');
+  if (delDefRow && activeKey) {
+    const i = parseInt(delDefRow.dataset.delDefRow);
+    syncEditorToState();
+    tables[activeKey]['definition_data'].splice(i, 1);
     renderEditor(tables[activeKey]);
   }
 });
@@ -379,17 +771,6 @@ document.addEventListener('blur', e => {
   }
 }, true);
 
-// Nullable toggle
-document.addEventListener('click', e => {
-  const btn = e.target.closest('.null-toggle');
-  if (!btn) return;
-  const newVal = btn.dataset.value === 'Yes' ? 'No' : 'Yes';
-  btn.dataset.value = newVal;
-  btn.textContent   = newVal;
-  btn.className     = 'null-toggle ' + (newVal === 'Yes' ? 'null-yes' : 'null-no');
-  clearTimeout(_jsonRefreshTimer);
-  _jsonRefreshTimer = setTimeout(refreshJsonPreview, 400);
-});
 
 /* ---------------------------- COLUMN OPERATIONS --------------------------- */
 
@@ -397,7 +778,7 @@ function addColumn() {
   if (!activeKey) return;
   syncEditorToState();
   tables[activeKey].columns.push({
-    name: '', type: '', nullable: 'Yes',
+    name: '', type: '',
     description: '', definition_table: ''
   });
   renderEditor(tables[activeKey]);
@@ -491,6 +872,22 @@ export function syncEditorToState() {
       tables[activeKey].queries[i].sql = editor.state.doc.toString();
     }
   });
+
+  // Definition headers sync
+  document.querySelectorAll('[data-def-header]').forEach(el => {
+    const i = parseInt(el.dataset.defHeader);
+    if (!isNaN(i) && t['definition_headers']?.[i] !== undefined)
+      t['definition_headers'][i] = el.value;
+  });
+
+  // Definition data sync
+  document.querySelectorAll('[data-def-row][data-def-col]').forEach(el => {
+    const r = parseInt(el.dataset.defRow);
+    const c = parseInt(el.dataset.defCol);
+    if (!isNaN(r) && !isNaN(c) && t['definition_data']?.[r] !== undefined)
+      t['definition_data'][r][c] = el.value;
+  });
+
   // Save to localStorage if autosave is enabled
   saveTablesToLocal();
 }
@@ -525,13 +922,13 @@ function bindToolbar() {
     // Robust autosave checkbox event handler
     const autosaveCheckbox = document.getElementById('autosave-checkbox');
     if (autosaveCheckbox) {
-      autosaveCheckbox.addEventListener('change', () => {
+      autosaveCheckbox.addEventListener('change', async () => {
         if (autosaveCheckbox.checked) {
           localStorage.setItem('autosave_enabled', 'true');
           saveTablesToLocal();
           showToast('Autosave enabled', 'success');
         } else {
-          if (confirm('Disable autosave and delete all locally saved tables?')) {
+          if (await showConfirm('Disable autosave and delete all locally saved tables?', { title: 'Disable Autosave', okLabel: 'Disable & Clear', cancelLabel: 'Keep Enabled' })) {
             localStorage.removeItem('autosave_enabled');
             localStorage.removeItem('editor_tables');
             localStorage.removeItem('editor_activeKey');
@@ -562,6 +959,10 @@ function bindToolbar() {
       }
     }
 
+    if (tables[activeKey].type === 'definition' && tables[activeKey]['definition_data']?.length) {
+      folder.file(`${activeKey}.dat`, serializeDat(tables[activeKey]['definition_data']));
+    }
+
     const blob = await zip.generateAsync({ type: 'blob' });
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement('a');
@@ -572,8 +973,8 @@ function bindToolbar() {
     showToast(`Downloaded ${activeKey}.zip`, 'success');
   });
 
-  document.getElementById('btn-clear').addEventListener('click', () => {
-    if (!confirm('Clear all loaded tables?')) return;
+  document.getElementById('btn-clear').addEventListener('click', async () => {
+    if (!await showConfirm('Clear all loaded tables?', { title: 'Clear All', okLabel: 'Clear All', cancelLabel: 'Cancel' })) return;
     tables    = {};
     activeKey = null;
     refreshSidebar();
@@ -592,8 +993,8 @@ function updateToolbarState() {
   document.getElementById('btn-download-json').disabled = !hasActive;
 }
 
-function removeTable(name) {
-  if (!confirm(`Remove ${name} from editor?`)) return;
+async function removeTable(name) {
+  if (!await showConfirm(`Remove "${name}" from the editor?`, { title: 'Remove Table', okLabel: 'Remove', cancelLabel: 'Cancel' })) return;
   delete tables[name];
   activeKey = null;
   refreshSidebar();
@@ -659,6 +1060,12 @@ async function submitToGitHub() {
     return;
   }
 
+  const t = tables[activeKey];
+  if (t.type === 'definition' && t.definition_data?.length && !t.definition_headers?.length) {
+    setGhStatus('Definition data has no headers. Add headers before submitting.', 'error');
+    return;
+  }
+
   // Persist submitter info for convenience
   localStorage.setItem('gh_submitter', JSON.stringify({ name, team, desc }));
 
@@ -668,12 +1075,14 @@ async function submitToGitHub() {
 
   try {
     const { prUrl } = await submitTableDefinition({
-      tableName:     activeKey,
-      jsonContent:   getCleanJson(),
-      queries:       tables[activeKey].queries,
-      submitterName: name,
-      submitterTeam: team,
-      description:   desc
+      tableName:      activeKey,
+      tableType:      tables[activeKey].type || 'data',
+      jsonContent:    getCleanJson(),
+      queries:        tables[activeKey].queries,
+      definitionData: tables[activeKey]['definition_data'],
+      submitterName:  name,
+      submitterTeam:  team,
+      description:    desc
     });
 
     setGhStatus(
@@ -700,6 +1109,34 @@ function setGhStatus(html, type) {
 
 /* ---------------------------------- TOAST --------------------------------- */
 
+/* ----------------------------- CONFIRM MODAL ------------------------------ */
+
+let _confirmResolve = null;
+
+export function showConfirm(message, { title = 'Confirm', okLabel = 'OK', cancelLabel = 'Cancel' } = {}) {
+  return new Promise(resolve => {
+    _confirmResolve = resolve;
+    document.getElementById('confirm-title').textContent   = title;
+    document.getElementById('confirm-message').textContent = message;
+    document.getElementById('confirm-ok').textContent      = okLabel;
+    document.getElementById('confirm-cancel').textContent  = cancelLabel;
+    document.getElementById('confirm-modal').style.display = 'flex';
+  });
+}
+
+function initConfirmModal() {
+  const modal  = document.getElementById('confirm-modal');
+  const okBtn  = document.getElementById('confirm-ok');
+  const canBtn = document.getElementById('confirm-cancel');
+  const settle = val => {
+    modal.style.display = 'none';
+    if (_confirmResolve) { _confirmResolve(val); _confirmResolve = null; }
+  };
+  okBtn.addEventListener('click',  () => settle(true));
+  canBtn.addEventListener('click', () => settle(false));
+  modal.addEventListener('keydown', e => { if (e.key === 'Escape') settle(false); });
+}
+
 export function showToast(msg, type = '') {
   const t = document.getElementById('toast');
   const icons = { success: '✓', error: '✕', '': 'ℹ' };
@@ -717,7 +1154,7 @@ function queryRowHtml(query, i) {
       <div class="query-card-header">
         <input class="field-input mono" data-qfield="file" data-query="${i}"
           value="${esc(query.file)}" placeholder="filename.sql"
-          style="width:200px;flex-shrink:0">
+          style="max-width:400px;flex-shrink:0">
         <input
           class="field-input"
           id="query-name-${i}"
@@ -806,11 +1243,22 @@ function bindCustomSelect() {
 
   menu.querySelectorAll('.custom-select-opt').forEach(opt => {
     opt.addEventListener('click', () => {
+      const newVal = opt.dataset.value;
+      const oldVal = activeKey ? tables[activeKey]?.type : null;
       menu.querySelectorAll('.custom-select-opt').forEach(o => o.classList.remove('selected'));
       opt.classList.add('selected');
-      input.value = opt.dataset.value;
+      input.value = newVal;
       label.textContent = opt.textContent;
       menu.classList.remove('open');
+      if (activeKey && newVal !== oldVal) {
+        syncEditorToState();
+        if (newVal === 'definition') {
+          const t = tables[activeKey];
+          if (!t['definition_headers']) t['definition_headers'] = [];
+          if (!t['definition_data'])    t['definition_data']    = [];
+        }
+        renderEditor(tables[activeKey]);
+      }
     });
   });
 }

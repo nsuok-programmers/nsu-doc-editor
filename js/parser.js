@@ -54,8 +54,8 @@ export function parseInfo(text) {
   }
 
   // Column pattern — mirrors convert.py regex
-  // Leading space or * (primary key indicator), uppercase name, data type, nullable, remainder
-  const colPattern = /^[\s*]([A-Z][A-Z0-9_]+)\s+([\w()., ]+?)\s{2,}(Yes|No)\s*(.*)/;
+  // Leading space or * (primary key indicator), uppercase name, data type, nullable (consumed but not stored), remainder
+  const colPattern = /^[\s*]([A-Z][A-Z0-9_]+)\s+([\w()., ]+?)\s{2,}(?:Yes|No)\s*(.*)/;
 
   const columns = [];
   let current = null;
@@ -69,8 +69,7 @@ export function parseInfo(text) {
       current = {
         name: m[1].trim(),
         type: m[2].trim(),
-        nullable: m[3].trim(),
-        description: m[4].trim(),
+        description: m[3].trim(),
         definition_table: ''
       };
     } else if (current && line.trim()) {
@@ -95,8 +94,29 @@ export function parseInfo(text) {
  * @returns {Object} Clean table object safe to write to disk
  */
 export function toExportJson(table) {
+  const { 'definition_data': _dd, ...rest } = table;
   return {
-    ...table,
-    queries: table.queries.map(({ sql, ...rest }) => rest)
+    ...rest,
+    queries: table.queries.map(({ sql, ...q }) => q)
   };
+}
+
+/**
+ * Parses tab-separated .dat file content into a 2D array.
+ * @param {string} text - Raw .dat file contents
+ * @returns {string[][]}
+ */
+export function parseDat(text) {
+  return text.split(/\r?\n/)
+    .map(line => line.split('\t'))
+    .filter(row => row.some(cell => cell.trim() !== ''));
+}
+
+/**
+ * Serializes a 2D array back to tab-separated .dat file content.
+ * @param {string[][]} data
+ * @returns {string}
+ */
+export function serializeDat(data) {
+  return data.map(row => row.join('\t')).join('\n');
 }
