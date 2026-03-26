@@ -1,18 +1,21 @@
 name: Forward Submission to nsu-prod-docs
 
 on:
-  pull_request:
-    types: [labeled]
+  push:
+    branches: [main]
+    paths: ['submissions/**']
 
 jobs:
   forward:
-    if: github.event.label.name == 'forward' && startsWith(github.event.pull_request.head.ref, 'submissions/')
+    if: "!contains(github.event.head_commit.message, '[cleanup]')"
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      pull-requests: write
 
     steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+
       - name: Generate GitHub App token
         id: app-token
         uses: actions/create-github-app-token@v1
@@ -22,45 +25,58 @@ jobs:
           owner: nathantbeene
           repositories: nsu-prod-docs
 
-      - name: Checkout submission branch
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
-
       - name: Push files and open PR on nsu-prod-docs
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
-          PR_BRANCH: ${{ github.event.pull_request.head.ref }}
-          PR_TITLE: ${{ github.event.pull_request.title }}
-          PR_BODY: ${{ github.event.pull_request.body }}
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          # Locate the submitted table
+          SUBMISSION_DIR=$(find submissions/table-definitions -mindepth 2 -maxdepth 2 -type d | head -1)
+          TABLE_TYPE=$(echo "$SUBMISSION_DIR" | cut -d'/' -f3)
+          TABLE_NAME=$(echo "$SUBMISSION_DIR" | cut -d'/' -f4)
+
+          # Read metadata
+          META="submissions/table-definitions/$TABLE_TYPE/$TABLE_NAME/metadata.json"
+          SUBMITTER_NAME=$(jq -r '.submitterName' "$META")
+          SUBMITTER_TEAM=$(jq -r '.submitterTeam' "$META")
+          DESCRIPTION=$(jq -r '.description // ""' "$META")
+          VERB=$(jq -r '.verb' "$META")
 
           # Clone prod repo and create branch
           git clone https://x-access-token:${GH_TOKEN}@github.com/nathantbeene/nsu-prod-docs.git prod-repo
           cd prod-repo
-          git checkout -b "${PR_BRANCH}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          # Copy table-definitions from the submission branch
-          cp -r ../table-definitions ./
+          BRANCH="submissions/${VERB}/${TABLE_NAME}"
+          git checkout -b "$BRANCH"
+
+          # Copy files, excluding metadata.json
+          mkdir -p "table-definitions/$TABLE_TYPE/$TABLE_NAME"
+          rsync -a --exclude='metadata.json' \
+            "../submissions/table-definitions/$TABLE_TYPE/$TABLE_NAME/" \
+            "table-definitions/$TABLE_TYPE/$TABLE_NAME/"
 
           git add table-definitions/
-          git commit -m "${PR_TITLE}"
-          git push origin "${PR_BRANCH}"
+          git commit -m "submission: ${VERB} ${TABLE_NAME} table definition"
+          git push origin "$BRANCH"
 
           # Open PR on nsu-prod-docs
+          PR_BODY="**Submitted by:** ${SUBMITTER_NAME} (${SUBMITTER_TEAM})"
+          if [ -n "$DESCRIPTION" ] && [ "$DESCRIPTION" != "null" ]; then
+            PR_BODY="${PR_BODY}"$'\n\n'"**Notes:** ${DESCRIPTION}"
+          fi
+
           gh pr create \
             --repo nathantbeene/nsu-prod-docs \
-            --head "${PR_BRANCH}" \
+            --head "$BRANCH" \
             --base main \
-            --title "${PR_TITLE}" \
-            --body "${PR_BODY}"
+            --title "submission: ${VERB} ${TABLE_NAME} table definition" \
+            --body "$PR_BODY"
 
-      - name: Delete submission branch from nsu-doc-editor
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Clear submissions from main
         run: |
-          gh api \
-            --method DELETE \
-            /repos/nathantbeene/nsu-doc-editor/git/refs/heads/${{ github.event.pull_request.head.ref }}
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git rm -rf submissions/
+          git commit -m "cleanup: clear submissions after forwarding [cleanup]"
+          git push

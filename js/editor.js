@@ -1069,12 +1069,12 @@ async function submitToGitHub() {
   // Persist submitter info for convenience
   localStorage.setItem('gh_submitter', JSON.stringify({ name, team, desc }));
 
-  setGhStatus('Creating branch…', '');
+  setGhStatus('Submitting…', '');
   const btn = document.getElementById('btn-gh-submit');
   btn.disabled = true;
 
   try {
-    const { prUrl } = await submitTableDefinition({
+    await submitTableDefinition({
       tableName:      activeKey,
       tableType:      tables[activeKey].type || 'data',
       jsonContent:    getCleanJson(),
@@ -1085,11 +1085,8 @@ async function submitToGitHub() {
       description:    desc
     });
 
-    setGhStatus(
-      `✓ PR opened! <a href="${prUrl}" target="_blank" style="color:var(--accent)">View →</a>`,
-      'success'
-    );
-    showToast('Pull Request opened', 'success');
+    setGhStatus('✓ Submitted! A PR will be opened on nsu-prod-docs shortly.', 'success');
+    showToast('Submission sent', 'success');
   } catch (e) {
     setGhStatus(`✕ ${e.message}`, 'error');
     showToast(e.message, 'error');
