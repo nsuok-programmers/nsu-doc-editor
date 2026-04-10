@@ -1,17 +1,15 @@
 /**
- * parser.js
+ * parser.ts
  * Parses Banner .info file text into a structured table object.
  * Logic mirrors convert.py exactly.
  */
 
-/**
- * @param {string} text - Raw contents of a .info file
- * @returns {Object} Parsed table definition
- */
-export function parseInfo(text) {
+import type { Table, Column } from './types.ts';
+
+export function parseInfo(text: string): Table {
   const lines = text.split(/\r?\n/);
 
-  const result = {
+  const result: Table = {
     name: '',
     description: '',
     type: 'data',
@@ -33,7 +31,7 @@ export function parseInfo(text) {
   }
 
   // Find column section start (line after the header row)
-  let colStart = null;
+  let colStart: number | null = null;
   for (let i = 0; i < lines.length; i++) {
     if (/\s*NAME\s+DATA TYPE\s+NULL/.test(lines[i])) {
       colStart = i + 1;
@@ -57,8 +55,8 @@ export function parseInfo(text) {
   // Leading space or * (primary key indicator), uppercase name, data type, nullable (consumed but not stored), remainder
   const colPattern = /^[\s*]([A-Z][A-Z0-9_]+)\s+([\w()., ]+?)\s{2,}(?:Yes|No)\s*(.*)/;
 
-  const columns = [];
-  let current = null;
+  const columns: Column[] = [];
+  let current: Column | null = null;
 
   for (let i = colStart; i < colEnd; i++) {
     const line = lines[i];
@@ -88,35 +86,23 @@ export function parseInfo(text) {
   return result;
 }
 
-/**
- * Strips internal UI-only fields before exporting JSON.
- * @param {Object} table
- * @returns {Object} Clean table object safe to write to disk
- */
-export function toExportJson(table) {
+/** Strips internal UI-only fields before exporting JSON. */
+export function toExportJson(table: Table): object {
   const { 'definition_data': _dd, ...rest } = table;
   return {
     ...rest,
-    queries: table.queries.map(({ sql, ...q }) => q)
+    queries: table.queries.map(({ sql: _sql, ...q }) => q)
   };
 }
 
-/**
- * Parses tab-separated .dat file content into a 2D array.
- * @param {string} text - Raw .dat file contents
- * @returns {string[][]}
- */
-export function parseDat(text) {
+/** Parses tab-separated .dat file content into a 2D array. */
+export function parseDat(text: string): string[][] {
   return text.split(/\r?\n/)
     .map(line => line.split('\t'))
     .filter(row => row.some(cell => cell.trim() !== ''));
 }
 
-/**
- * Serializes a 2D array back to tab-separated .dat file content.
- * @param {string[][]} data
- * @returns {string}
- */
-export function serializeDat(data) {
+/** Serializes a 2D array back to tab-separated .dat file content. */
+export function serializeDat(data: string[][]): string {
   return data.map(row => row.join('\t')).join('\n');
 }
