@@ -1,0 +1,10 @@
+name = "nsu-doc-editor-worker"
+main = "src/index.ts"
+compatibility_date = "2024-01-01"
+
+[vars]
+GITHUB_APP_ID = "3338741"
+GITHUB_INSTALLATION_ID = "122953095"
+GH_OWNER = "nathantbeene"
+DOCS_REPO = "nsu-prod-docs"
+ALLOWED_ORIGIN = "https://nathantbeene.github.io"
