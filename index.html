@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DB Docs Editor</title>
+  <script type="module" crossorigin src="/nsu-doc-editor/assets/index-VFqExvtz.js"></script>
+  <link rel="stylesheet" crossorigin href="/nsu-doc-editor/assets/index-DpZGiXxG.css">
+</head>
+<body>
+
+<header>
+  <div class="logo">NSU PROD<span class="sep">|</span>Docs Editor</div>
+  <nav>
+    <span id="autosave-toggle">
+      <label id="autosave-label" for="autosave-checkbox">Autosave</label>
+      <input type="checkbox" id="autosave-checkbox">
+    </span>
+    <button class="btn btn-ghost"    id="btn-clear"         disabled>Clear All</button>
+    <button class="btn btn-ghost"    id="btn-copy-json"     disabled>Copy JSON</button>
+    <button class="btn btn-success"  id="btn-download-json" disabled>↓ Download Package</button>
+  </nav>
+</header>
+
+<div class="workspace">
+
+  <!-- ── Sidebar ── -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-section-header">📂 Loaded Tables</div>
+
+    <div class="table-list" id="table-list">
+      <!-- Populated by editor.ts -->
+    </div>
+
+    <label class="drop-zone" id="drop-zone">
+      <input type="file" id="file-input" accept=".info" multiple>
+      <div class="drop-icon">⬆</div>
+      <div class="drop-label">Drop <strong>.info files</strong><br>or click to browse</div>
+      <div class="drop-ext">.info</div>
+      <button id="paste-info-btn" class="btn btn-ghost" type="button">Paste .info</button>
+      <button id="browse-repo-btn" class="btn btn-ghost" type="button">Browse Repo</button>
+    </label>
+
+    <!-- Browse Repo Modal -->
+    <div id="browse-repo-modal">
+      <div class="modal-dialog modal-dialog--wide">
+        <h3>Browse &amp; Import from Repo</h3>
+        <div id="browse-repo-list" class="browse-repo-list"></div>
+        <div class="modal-actions">
+          <button id="browse-repo-cancel" class="btn btn-ghost" type="button">Cancel</button>
+          <button id="browse-repo-import" class="btn btn-primary" type="button" disabled>Import Selected</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Paste Info Modal -->
+    <div id="paste-info-modal">
+      <div class="modal-dialog">
+        <h3>Paste .info Content</h3>
+        <textarea id="paste-info-textarea" class="field-input mono" rows="12" placeholder="Paste the contents of a .info file here…"></textarea>
+        <div class="modal-actions">
+          <button id="paste-info-cancel" class="btn btn-ghost" type="button">Cancel</button>
+          <button id="paste-info-submit" class="btn btn-primary" type="button">Import</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Paste .dat Modal -->
+    <div id="paste-dat-modal">
+      <div class="modal-dialog">
+        <h3>Paste .dat Content</h3>
+        <textarea id="paste-dat-textarea" class="field-input mono" rows="12" placeholder="Paste tab-separated .dat file content here…"></textarea>
+        <div class="modal-actions">
+          <button id="paste-dat-cancel" class="btn btn-ghost" type="button">Cancel</button>
+          <button id="paste-dat-submit" class="btn btn-primary" type="button">Import</button>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ── Editor main ── -->
+  <main class="editor-main">
+
+    <div class="empty-state" id="empty-state">
+      <div class="empty-icon">🗄️</div>
+      <h2>No table loaded</h2>
+      <p>Upload one or more <code style="font-family:var(--mono);color:var(--accent);font-size:12px">.info</code> files to start editing.</p>
+    </div>
+
+    <div class="editor-content" id="editor-content" style="display:none">
+      <!-- Populated per-table by editor.js -->
+    </div>
+
+  </main>
+
+</div>
+
+<!-- Toast notification -->
+<div class="toast" id="toast"></div>
+
+<!-- Confirm modal -->
+<div id="confirm-modal">
+  <div class="modal-dialog">
+    <h3 id="confirm-title">Confirm</h3>
+    <p id="confirm-message" class="confirm-message"></p>
+    <div class="modal-actions">
+      <button id="confirm-cancel" class="btn btn-ghost" type="button">Cancel</button>
+      <button id="confirm-ok"     class="btn btn-primary" type="button">OK</button>
+    </div>
+  </div>
+</div>
+
+
+</body>
+</html>
