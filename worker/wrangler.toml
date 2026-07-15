@@ -4,7 +4,7 @@ compatibility_date = "2024-01-01"
 
 [vars]
 GITHUB_APP_ID = "3338741"
-GITHUB_INSTALLATION_ID = "122953095"
-GH_OWNER = "nathantbeene"
+GITHUB_INSTALLATION_ID = "146793812"
+GH_OWNER = "nsuok-programmers"
 DOCS_REPO = "nsu-prod-docs"
-ALLOWED_ORIGIN = "https://atendev.github.io"
+ALLOWED_ORIGIN = "https://nsuok-programmers.github.io"

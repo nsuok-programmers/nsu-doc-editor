@@ -22,7 +22,7 @@ jobs:
         with:
           app-id: ${{ secrets.APP_ID }}
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
-          owner: nathantbeene
+          owner: nsuok-programmers
           repositories: nsu-prod-docs
 
       - name: Push files and open PR on nsu-prod-docs
@@ -42,7 +42,7 @@ jobs:
           VERB=$(jq -r '.verb' "$META")
 
           # Clone prod repo and create branch
-          git clone https://x-access-token:${GH_TOKEN}@github.com/nathantbeene/nsu-prod-docs.git prod-repo
+          git clone https://x-access-token:${GH_TOKEN}@github.com/nsuok-programmers/nsu-prod-docs.git prod-repo
           cd prod-repo
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -67,7 +67,7 @@ jobs:
           fi
 
           gh pr create \
-            --repo nathantbeene/nsu-prod-docs \
+            --repo nsuok-programmers/nsu-prod-docs \
             --head "$BRANCH" \
             --base main \
             --title "submission: ${VERB} ${TABLE_NAME} table definition" \

@@ -2,13 +2,13 @@
   "name": "nsu-doc-editor",
   "version": "1.0.0",
   "description": "A web-based documentation/table editor with local autosave and GitHub integration.",
-  "homepage": "https://github.com/NathanTBeene/nsu-doc-editor#readme",
+  "homepage": "https://github.com/nsuok-programmers/nsu-doc-editor#readme",
   "bugs": {
-    "url": "https://github.com/NathanTBeene/nsu-doc-editor/issues"
+    "url": "https://github.com/nsuok-programmers/nsu-doc-editor/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/NathanTBeene/nsu-doc-editor.git"
+    "url": "git+https://github.com/nsuok-programmers/nsu-doc-editor.git"
   },
   "license": "ISC",
   "author": "",
